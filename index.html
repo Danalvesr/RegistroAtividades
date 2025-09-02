@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meu Diário de Atividades Semanal</title>
+    <!-- Tailwind CSS CDN para estilo moderno e responsivo -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+        .week-table-container {
+            overflow-x: auto;
+        }
+        .activity-card {
+            background-color: #f1f5f9;
+            padding: 8px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            cursor: pointer; /* Indica que o elemento é clicável */
+        }
+        .activity-card:last-child {
+            margin-bottom: 0;
+        }
+        .modal-overlay {
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+        .drag-over {
+            background-color: #e2e8f0; /* Cor de fundo para o efeito de arrastar sobre */
+            border-style: dashed;
+            border-color: #94a3b8;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col items-center p-4">
+    
+    <script type="module">
+        // Importa o cliente Supabase
+        import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+        // --- ATENÇÃO: SUBSTITUA COM SUAS CHAVES DO SUPABASE ---
+        // Você pode encontrar esses valores no seu Dashboard do Supabase, em "Settings" -> "API"
+        const SUPABASE_URL = 'https://cabulwewdqwkxllsqorb.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhYnVsd2V3ZHF3a3hsbHNxb3JiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY3NTAxMTIsImV4cCI6MjA3MjMyNjExMn0.7WSN-6ICS06H4Rb_HMq4c0oFyBpa11O1mRDFgzO3AJg';
+
+        const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // Referências do DOM
+        const weekTable = document.getElementById('weekTable');
+        const addActivityModal = document.getElementById('addActivityModal');
+        const editActivityModal = document.getElementById('editActivityModal');
+        const exportModal = document.getElementById('exportModal');
+        const exportBtn = document.getElementById('exportBtn');
+        const exportStartDate = document.getElementById('exportStartDate');
+        const exportEndDate = document.getElementById('exportEndDate');
+        const closeExportModalBtn = document.getElementById('closeExportModalBtn');
+        const exportSubmitBtn = document.getElementById('exportSubmitBtn');
+        const closeAddModalBtn = document.getElementById('closeAddModalBtn');
+        const addActivityBtn = document.getElementById('addActivityBtn');
+        const modalProject = document.getElementById('modalProject');
+        const modalActivityName = document.getElementById('modalActivityName');
+        const modalTimeHours = document.getElementById('modalTimeHours');
+        const modalTimeMinutes = document.getElementById('modalTimeMinutes');
+        const modalDescription = document.getElementById('modalDescription');
+
+        const editModalProject = document.getElementById('editModalProject');
+        const editModalActivityName = document.getElementById('editModalActivityName');
+        const editModalTimeHours = document.getElementById('editModalTimeHours');
+        const editModalTimeMinutes = document.getElementById('editModalTimeMinutes');
+        const editModalDescription = document.getElementById('editModalDescription');
+        const saveEditedActivityBtn = document.getElementById('saveEditedActivityBtn');
+        const deleteFromEditModalBtn = document.getElementById('deleteFromEditModalBtn');
+        const closeEditModalBtn = document.getElementById('closeEditModalBtn');
+        
+        const confirmModal = document.getElementById('confirmModal');
+        const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
+        const cancelDeleteBtn = document.getElementById('cancelDeleteBtn');
+
+        // Variável global para rastrear a semana atual e a data do dia selecionado
+        let currentWeekStart;
+        let selectedDate;
+        let editingActivityId = null;
+        let activityToDeleteId = null;
+
+        // Função para exibir mensagem personalizada no lugar do alert()
+        function showMessage(message) {
+            const modal = document.getElementById('message-modal');
+            const messageText = document.getElementById('message-text');
+            messageText.textContent = message;
+            modal.classList.remove('hidden');
+        }
+
+        document.getElementById('close-modal').addEventListener('click', () => {
+            document.getElementById('message-modal').classList.add('hidden');
+        });
+
+        // Configuração inicial da aplicação
+        async function setupApp() {
+            try {
+                // Obtém a data de hoje e ajusta para o início da semana (segunda-feira)
+                const today = new Date();
+                const dayOfWeek = today.getDay(); // 0 = Domingo, 1 = Segunda, etc.
+                const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+                currentWeekStart = new Date(today.setDate(today.getDate() - daysToMonday));
+
+                // Listener para atividades em tempo real (opcional, mas bom para sincronização)
+                supabase.channel('activities_changes')
+                    .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, () => {
+                        // Quando há uma mudança, re-busca os dados
+                        fetchActivities();
+                    })
+                    .subscribe();
+
+                fetchActivities();
+
+            } catch (error) {
+                console.error("Erro na inicialização do Supabase:", error);
+                showMessage("Erro ao iniciar a aplicação. Verifique as suas chaves.");
+            }
+        }
+
+        // Função para buscar todas as atividades do Supabase
+        async function fetchActivities() {
+            try {
+                const { data, error } = await supabase
+                    .from('activities')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+
+                if (error) throw error;
+                
+                renderActivities(data);
+            } catch (error) {
+                console.error("Erro ao obter atividades:", error.message);
+                showMessage("Erro ao buscar atividades. Verifique a conexão.");
+            }
+        }
+
+        // Função para renderizar a lista de atividades na UI
+        function renderActivities(activities) {
+            const daysOfWeek = [];
+            const dayNames = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta'];
+            for (let i = 0; i < 5; i++) {
+                const date = new Date(currentWeekStart);
+                date.setDate(currentWeekStart.getDate() + i);
+                
+                const year = date.getFullYear();
+                const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                const day = date.getDate().toString().padStart(2, '0');
+                
+                daysOfWeek.push({
+                    name: dayNames[i],
+                    date: date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
+                    fullDate: `${year}-${month}-${day}` // Formato YYYY-MM-DD
+                });
+            }
+
+            weekTable.innerHTML = ''; // Limpa o conteúdo da tabela
+
+            const activitiesByDay = {};
+            daysOfWeek.forEach(day => activitiesByDay[day.name] = []);
+            
+            // Filtra as atividades para a semana atual
+            const endOfWeek = new Date(currentWeekStart);
+            endOfWeek.setDate(endOfWeek.getDate() + 5);
+
+            activities.forEach(activity => {
+                const dayName = daysOfWeek.find(day => day.fullDate === activity.created_at)?.name;
+                
+                if (dayName) {
+                    activitiesByDay[dayName].push(activity);
+                }
+            });
+
+            const headerRow = weekTable.insertRow();
+            headerRow.className = 'bg-gray-200';
+
+            // Célula para o botão de semana anterior
+            const prevCell = document.createElement('th');
+            prevCell.className = 'p-4 text-left text-sm font-semibold text-gray-700 w-12 cursor-pointer hover:bg-gray-300 transition-colors duration-200';
+            prevCell.innerHTML = `&lt;`;
+            prevCell.addEventListener('click', goToPreviousWeek);
+            headerRow.appendChild(prevCell);
+
+            // Células para cada dia da semana
+            daysOfWeek.forEach(day => {
+                const cell = document.createElement('th');
+                cell.className = `p-4 text-left text-sm font-semibold text-gray-700`;
+                cell.innerHTML = `${day.name} (${day.date}) <span data-date="${day.fullDate}" class="add-activity-btn text-xl font-bold ml-2 cursor-pointer text-blue-500 hover:text-blue-700">+</span>`;
+                headerRow.appendChild(cell);
+            });
+
+            // Célula para o botão de próxima semana
+            const nextCell = document.createElement('th');
+            nextCell.className = 'p-4 text-right text-sm font-semibold text-gray-700 w-12 cursor-pointer hover:bg-gray-300 transition-colors duration-200';
+            nextCell.innerHTML = `&gt;`;
+            nextCell.addEventListener('click', goToNextWeek);
+            headerRow.appendChild(nextCell);
+
+
+            const contentRow = weekTable.insertRow();
+            contentRow.className = 'align-top';
+            // Adiciona uma célula vazia para a coluna de navegação
+            contentRow.insertCell().className = 'p-2 border border-gray-200';
+            daysOfWeek.forEach(day => {
+                const cell = contentRow.insertCell();
+                cell.className = `p-2 border border-gray-200 min-w-[150px] md:min-w-[180px] h-[300px] overflow-y-auto`;
+                cell.dataset.date = day.fullDate;
+                cell.addEventListener('dragover', handleDragOver);
+                cell.addEventListener('dragleave', handleDragLeave);
+                cell.addEventListener('drop', handleDrop);
+
+                const dayActivities = activitiesByDay[day.name] || [];
+                
+                // Calcula o total de tempo para o dia
+                const totalMinutes = dayActivities.reduce((sum, activity) => sum + activity.time_spent, 0);
+                const totalHours = Math.floor(totalMinutes / 60);
+                const remainingMinutes = totalMinutes % 60;
+                
+                const goalMet = totalMinutes >= 8 * 60;
+                const totalTimeClass = goalMet ? 'text-green-600' : 'text-red-600';
+                
+                let hoursWorkedText = '';
+                if (totalHours > 0) {
+                    hoursWorkedText += `${totalHours}h`;
+                }
+                if (remainingMinutes > 0) {
+                    hoursWorkedText += ` ${remainingMinutes}min`;
+                }
+                if (hoursWorkedText === '') {
+                    hoursWorkedText = '0h';
+                }
+
+                const totalTimeDiv = document.createElement('div');
+                totalTimeDiv.className = `font-bold text-center mb-2 ${totalTimeClass}`;
+                totalTimeDiv.textContent = `${hoursWorkedText.trim()} / 8h`;
+                cell.appendChild(totalTimeDiv);
+
+                if (dayActivities.length === 0) {
+                    const noActivityMessage = document.createElement('p');
+                    noActivityMessage.className = 'text-xs text-gray-400 text-center mt-4';
+                    noActivityMessage.textContent = 'Nenhuma atividade';
+                    cell.appendChild(noActivityMessage);
+                } else {
+                    dayActivities.forEach(activity => {
+                        // Converte o tempo de minutos para horas e minutos
+                        const timeInMinutes = activity.time_spent;
+                        let formattedTime;
+                        if (timeInMinutes >= 60) {
+                            const hours = Math.floor(timeInMinutes / 60);
+                            const minutes = timeInMinutes % 60;
+                            formattedTime = `${hours}h ${minutes}min`;
+                        } else {
+                            formattedTime = `${timeInMinutes}min`;
+                        }
+
+                        const activityCard = document.createElement('div');
+                        activityCard.className = 'activity-card relative group';
+                        activityCard.setAttribute('draggable', true);
+                        activityCard.dataset.id = activity.id;
+                        
+                        // Adiciona evento de clique para abrir o modal de edição
+                        activityCard.addEventListener('click', () => {
+                            editActivity(activity.id);
+                        });
+
+                        // Event listener para o início do arrastar
+                        activityCard.addEventListener('dragstart', (e) => {
+                            e.dataTransfer.setData('text/plain', activity.id);
+                        });
+
+                        const activityContent = document.createElement('div');
+                        activityContent.innerHTML = `
+                            <span class="block font-bold text-gray-800">${activity.name}</span>
+                            <span class="block text-xs text-gray-600">${formattedTime}</span>
+                            <p class="text-xs text-gray-500 mt-1">Projeto: ${activity.project || 'Não especificado'}</p>
+                            <p class="text-xs text-gray-500 mt-1">${activity.description}</p>
+                        `;
+
+                        activityCard.appendChild(activityContent);
+                        cell.appendChild(activityCard);
+                    });
+                }
+            });
+            // Adiciona uma célula vazia para a coluna de navegação
+            contentRow.insertCell().className = 'p-2 border border-gray-200';
+
+            // Adiciona event listeners para os botões de adicionar atividade
+            document.querySelectorAll('.add-activity-btn').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    selectedDate = e.currentTarget.dataset.date;
+                    addActivityModal.classList.remove('hidden');
+                });
+            });
+        }
+        
+        // --- Lógica de Edição de Atividade ---
+        async function editActivity(id) {
+            editingActivityId = id;
+            try {
+                const { data, error } = await supabase
+                    .from('activities')
+                    .select('*')
+                    .eq('id', id)
+                    .single();
+                
+                if (error) throw error;
+                
+                const totalMinutes = data.time_spent;
+                const hours = Math.floor(totalMinutes / 60);
+                const minutes = totalMinutes % 60;
+                
+                editModalProject.value = data.project;
+                editModalActivityName.value = data.name;
+                editModalTimeHours.value = hours;
+                editModalTimeMinutes.value = minutes;
+                editModalDescription.value = data.description;
+                
+                editActivityModal.classList.remove('hidden');
+            } catch (error) {
+                console.error("Erro ao carregar atividade para edição:", error.message);
+                showMessage("Erro ao carregar atividade para edição. Tente novamente.");
+            }
+        }
+
+        async function saveEditedActivity() {
+            const name = editModalActivityName.value.trim();
+            const project = editModalProject.value.trim();
+            const hours = parseInt(editModalTimeHours.value, 10) || 0;
+            const minutes = parseInt(editModalTimeMinutes.value, 10) || 0;
+            const description = editModalDescription.value.trim();
+
+            if (!name || (hours === 0 && minutes === 0)) {
+                showMessage('Preencha o nome da atividade e o tempo gasto.');
+                return;
+            }
+            
+            const totalMinutes = (hours * 60) + minutes;
+            
+            try {
+                const { error } = await supabase
+                    .from('activities')
+                    .update({ name, project, time_spent: totalMinutes, description })
+                    .eq('id', editingActivityId);
+
+                if (error) throw error;
+                
+                editActivityModal.classList.add('hidden');
+                fetchActivities(); // Força a atualização da UI
+            } catch (error) {
+                console.error("Erro ao salvar edição:", error.message);
+                showMessage("Erro ao salvar a edição. Tente novamente.");
+            }
+        }
+
+        // Lógica de Drag and Drop
+        function handleDragOver(e) {
+            e.preventDefault();
+            e.currentTarget.classList.add('drag-over');
+        }
+
+        function handleDragLeave(e) {
+            e.currentTarget.classList.remove('drag-over');
+        }
+
+        async function handleDrop(e) {
+            e.preventDefault();
+            e.currentTarget.classList.remove('drag-over');
+            const activityId = e.dataTransfer.getData('text/plain');
+            const newDate = e.currentTarget.dataset.date;
+            
+            if (activityId && newDate) {
+                try {
+                    const { error } = await supabase
+                        .from('activities')
+                        .update({ created_at: newDate })
+                        .eq('id', activityId);
+
+                    if (error) throw error;
+                    
+                    fetchActivities();
+                } catch (error) {
+                    console.error("Erro ao mover a atividade:", error.message);
+                    showMessage("Erro ao mover a atividade. Tente novamente.");
+                }
+            }
+        }
+
+        // Função para ir para a semana anterior
+        function goToPreviousWeek() {
+            currentWeekStart.setDate(currentWeekStart.getDate() - 7);
+            fetchActivities();
+        }
+
+        // Função para ir para a próxima semana
+        function goToNextWeek() {
+            currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+            fetchActivities();
+        }
+
+        // Função para salvar uma nova atividade no Supabase
+        async function saveActivity() {
+            const name = modalActivityName.value.trim();
+            const project = modalProject.value.trim();
+            const hours = parseInt(modalTimeHours.value, 10) || 0;
+            const minutes = parseInt(modalTimeMinutes.value, 10) || 0;
+            const description = modalDescription.value.trim();
+
+            if (!name || (hours === 0 && minutes === 0)) {
+                showMessage('Preencha o nome da atividade e o tempo gasto.');
+                return;
+            }
+            
+            const totalMinutes = (hours * 60) + minutes;
+
+            try {
+                const { error } = await supabase
+                    .from('activities')
+                    .insert([
+                        { name: name, project: project, time_spent: totalMinutes, description: description, created_at: selectedDate }
+                    ]);
+
+                if (error) throw error;
+                
+                modalActivityName.value = '';
+                modalProject.value = 'Carbel';
+                modalTimeHours.value = '';
+                modalTimeMinutes.value = '';
+                modalDescription.value = '';
+                addActivityModal.classList.add('hidden');
+                
+                fetchActivities();
+            } catch (error) {
+                console.error("Erro ao salvar atividade:", error.message);
+                showMessage("Erro ao salvar a atividade. Tente novamente.");
+            }
+        }
+
+        // Função para deletar uma atividade do Supabase
+        async function deleteActivity(id) {
+            try {
+                const { error } = await supabase
+                    .from('activities')
+                    .delete()
+                    .eq('id', id);
+
+                if (error) throw error;
+                
+                fetchActivities();
+            } catch (error) {
+                console.error("Erro ao deletar atividade:", error.message);
+                showMessage("Erro ao deletar a atividade. Tente novamente.");
+            }
+        }
+        
+        // Excluir atividade a partir do modal de edição
+        deleteFromEditModalBtn.addEventListener('click', () => {
+            editActivityModal.classList.add('hidden');
+            confirmModal.classList.remove('hidden');
+            activityToDeleteId = editingActivityId;
+        });
+
+        // Event listener para o botão de confirmação de exclusão
+        confirmDeleteBtn.addEventListener('click', () => {
+            deleteActivity(activityToDeleteId);
+            confirmModal.classList.add('hidden');
+        });
+
+        // Event listener para o botão de cancelamento de exclusão
+        cancelDeleteBtn.addEventListener('click', () => {
+            confirmModal.classList.add('hidden');
+        });
+
+        // --- Lógica de Exportação para CSV ---
+        async function exportToCsv() {
+            const startDate = exportStartDate.value;
+            const endDate = exportEndDate.value;
+            
+            if (!startDate || !endDate) {
+                showMessage("Por favor, selecione as datas de início e fim.");
+                return;
+            }
+
+            try {
+                const { data, error } = await supabase
+                    .from('activities')
+                    .select('created_at, name, project, time_spent, description')
+                    .gte('created_at', startDate)
+                    .lte('created_at', endDate)
+                    .order('created_at', { ascending: true });
+
+                if (error) throw error;
+                
+                if (data.length === 0) {
+                    showMessage("Nenhuma atividade encontrada no período selecionado.");
+                    return;
+                }
+
+                // Cria o conteúdo do CSV
+                const header = ["Data", "Projeto", "Nome da Atividade", "Tempo Gasto (min)", "Descrição"];
+                const rows = data.map(activity => [
+                    activity.created_at,
+                    `"${activity.project}"`,
+                    `"${activity.name}"`,
+                    activity.time_spent,
+                    `"${activity.description}"`
+                ]);
+                
+                const csvContent = [
+                    header.join(","),
+                    ...rows.map(row => row.join(","))
+                ].join("\n");
+                
+                // Cria e dispara o download do arquivo CSV
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.setAttribute("href", url);
+                link.setAttribute("download", "atividades.csv");
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                exportModal.classList.add('hidden');
+                showMessage("Atividades exportadas com sucesso!");
+
+            } catch (error) {
+                console.error("Erro ao exportar atividades:", error.message);
+                showMessage("Erro ao exportar as atividades. Tente novamente.");
+            }
+        }
+        
+        addActivityBtn.addEventListener('click', saveActivity);
+        closeAddModalBtn.addEventListener('click', () => {
+            addActivityModal.classList.add('hidden');
+        });
+
+        saveEditedActivityBtn.addEventListener('click', saveEditedActivity);
+        closeEditModalBtn.addEventListener('click', () => {
+            editActivityModal.classList.add('hidden');
+        });
+
+        exportBtn.addEventListener('click', () => {
+            exportModal.classList.remove('hidden');
+        });
+        closeExportModalBtn.addEventListener('click', () => {
+            exportModal.classList.add('hidden');
+        });
+        exportSubmitBtn.addEventListener('click', exportToCsv);
+
+        window.onload = setupApp;
+    </script>
+
+    <div class="w-full mt-8 p-4">
+        <div class="bg-white rounded-2xl shadow-xl p-8 max-w-lg w-full mx-auto text-center">
+            <h1 class="text-3xl font-bold text-gray-800">Meu Diário de Atividades</h1>
+            <p class="text-sm text-gray-500 mt-2">Clique em (+) para adicionar uma atividade.</p>
+        </div>
+    </div>
+    
+    <div class="w-full mt-8 p-4">
+        <div class="flex justify-end mb-4">
+            <button id="exportBtn" class="bg-gray-400 text-white font-semibold py-2 px-4 rounded-lg hover:bg-gray-500 transition-colors duration-200">
+                Exportar para CSV
+            </button>
+        </div>
+        <div class="week-table-container">
+            <h2 class="text-xl font-bold text-gray-800 border-b border-gray-300 pb-2 mb-4">Atividades Registradas na Semana</h2>
+            <table id="weekTable" class="min-w-full bg-white rounded-xl shadow-md border-collapse">
+            </table>
+        </div>
+    </div>
+
+    <!-- Modal para adicionar nova atividade -->
+    <div id="addActivityModal" class="hidden fixed inset-0 z-50 flex items-center justify-center modal-overlay">
+        <div class="bg-white p-6 rounded-2xl shadow-xl max-w-sm w-full relative">
+            <button id="closeAddModalBtn" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 text-xl font-bold">&times;</button>
+            <h3 class="text-xl font-bold text-gray-800 mb-4">Adicionar Atividade</h3>
+            <div class="space-y-4">
+                <select id="modalProject" class="w-full p-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all">
+                    <option value="Carbel">Carbel</option>
+                    <option value="CNP">CNP</option>
+                    <option value="Guidoni">Guidoni</option>
+                    <option value="Dannemann">Dannemann</option>
+                    <option value="Outra">Outra</option>
+                </select>
+                <input id="modalActivityName" type="text" placeholder="Nome da atividade" class="w-full p-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all">
+                <div class="flex space-x-2">
+                    <input id="modalTimeHours" type="number" placeholder="Horas" class="w-1/2 p-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all">
+                    <input id="modalTimeMinutes" type="number" placeholder="Minutos" class="w-1/2 p-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all">
+                </div>
+                <textarea id="modalDescription" placeholder="Descrição da atividade" rows="3" class="w-full p-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"></textarea>
+                <button id="addActivityBtn" class="w-full bg-blue-600 text-white font-semibold py-3 rounded-lg hover:bg-blue-700 transition-colors duration-200">
+                    Salvar Atividade
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para editar atividade -->
+    <div id="editActivityModal" class="hidden fixed inset-0 z-50 flex items-center justify-center modal-overlay">
+        <div class="bg-white p-6 rounded-2xl shadow-xl max-w-sm w-full relative">
+            <button id="closeEditModalBtn" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 text-xl font-bold">&times;</button>
+            <h3 class="text-xl font-bold text-gray-800 mb-4">Editar Atividade</h3>
+            <div class="space-y-4">
+                <select id="editModalProject" class="w-full p-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all">
+                    <option value="Carbel">Carbel</option>
+                    <option value="CNP">CNP</option>
+                    <option value="Guidoni">Guidoni</option>
+                    <option value="Dannemann">Dannemann</option>
+                    <option value="Outra">Outra</option>
+                </select>
+                <input id="editModalActivityName" type="text" placeholder="Nome da atividade" class="w-full p-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all">
+                <div class="flex space-x-2">
+                    <input id="editModalTimeHours" type="number" placeholder="Horas" class="w-1/2 p-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all">
+                    <input id="editModalTimeMinutes" type="number" placeholder="Minutos" class="w-1/2 p-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all">
+                </div>
+                <textarea id="editModalDescription" placeholder="Descrição da atividade" rows="3" class="w-full p-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"></textarea>
+                <button id="saveEditedActivityBtn" class="w-full bg-blue-600 text-white font-semibold py-3 rounded-lg hover:bg-blue-700 transition-colors duration-200">
+                    Salvar Edição
+                </button>
+                <button id="deleteFromEditModalBtn" class="w-full bg-red-600 text-white font-semibold py-3 rounded-lg hover:bg-red-700 transition-colors duration-200">
+                    Excluir Atividade
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de confirmação para exclusão -->
+    <div id="confirmModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center modal-overlay">
+        <div class="bg-white p-6 rounded-2xl shadow-xl max-w-xs w-full text-center">
+            <h3 class="text-lg font-bold text-gray-800 mb-4">Confirmar Exclusão</h3>
+            <p class="mb-6">Tem certeza que deseja excluir esta atividade?</p>
+            <div class="flex justify-center space-x-4">
+                <button id="cancelDeleteBtn" class="bg-gray-400 text-white font-semibold py-2 px-4 rounded-lg hover:bg-gray-500 transition-colors duration-200">
+                    Cancelar
+                </button>
+                <button id="confirmDeleteBtn" class="bg-red-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-red-700 transition-colors duration-200">
+                    Excluir
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para exportar dados -->
+    <div id="exportModal" class="hidden fixed inset-0 z-50 flex items-center justify-center modal-overlay">
+        <div class="bg-white p-6 rounded-2xl shadow-xl max-w-sm w-full relative">
+            <button id="closeExportModalBtn" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 text-xl font-bold">&times;</button>
+            <h3 class="text-xl font-bold text-gray-800 mb-4">Exportar Atividades para CSV</h3>
+            <div class="space-y-4">
+                <p>Selecione o período para exportar:</p>
+                <div>
+                    <label for="exportStartDate" class="block text-sm font-medium text-gray-700">Data de Início</label>
+                    <input type="date" id="exportStartDate" class="w-full p-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all mt-1">
+                </div>
+                <div>
+                    <label for="exportEndDate" class="block text-sm font-medium text-gray-700">Data de Fim</label>
+                    <input type="date" id="exportEndDate" class="w-full p-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all mt-1">
+                </div>
+                <button id="exportSubmitBtn" class="w-full bg-green-600 text-white font-semibold py-3 rounded-lg hover:bg-green-700 transition-colors duration-200">
+                    Exportar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para mensagens de erro/sucesso -->
+    <div id="message-modal" class="hidden fixed inset-0 z-[55] flex items-center justify-center modal-overlay">
+        <div class="bg-white p-6 rounded-xl shadow-xl max-w-sm w-full text-center">
+            <p id="message-text" class="text-gray-800 font-semibold mb-4"></p>
+            <button id="close-modal" class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600">
+                OK
+            </button>
+        </div>
+    </div>
+
+</body>
+</html>
