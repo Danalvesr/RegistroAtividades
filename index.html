@@ -181,7 +181,7 @@
 
             // Célula para o botão de semana anterior
             const prevCell = document.createElement('th');
-            prevCell.className = 'p-4 text-left text-sm font-semibold text-gray-700 w-12 cursor-pointer hover:bg-gray-300 transition-colors duration-200';
+            prevCell.className = 'p-4 text-center text-sm font-semibold text-gray-700 w-12 cursor-pointer hover:bg-gray-300 transition-colors duration-200';
             prevCell.innerHTML = `&lt;`;
             prevCell.addEventListener('click', goToPreviousWeek);
             headerRow.appendChild(prevCell);
@@ -189,14 +189,14 @@
             // Células para cada dia da semana
             daysOfWeek.forEach(day => {
                 const cell = document.createElement('th');
-                cell.className = `p-4 text-left text-sm font-semibold text-gray-700`;
-                cell.innerHTML = `${day.name} (${day.date}) <span data-date="${day.fullDate}" class="add-activity-btn text-xl font-bold ml-2 cursor-pointer text-blue-500 hover:text-blue-700">+</span>`;
+                cell.className = `p-4 text-center text-sm font-semibold text-gray-700`;
+                cell.innerHTML = `${day.name} (${day.date}) <span data-date="${day.fullDate}" class="add-activity-btn text-2xl font-bold ml-2 cursor-pointer text-blue-500 hover:text-blue-700">+</span>`;
                 headerRow.appendChild(cell);
             });
 
             // Célula para o botão de próxima semana
             const nextCell = document.createElement('th');
-            nextCell.className = 'p-4 text-right text-sm font-semibold text-gray-700 w-12 cursor-pointer hover:bg-gray-300 transition-colors duration-200';
+            nextCell.className = 'p-4 text-center text-sm font-semibold text-gray-700 w-12 cursor-pointer hover:bg-gray-300 transition-colors duration-200';
             nextCell.innerHTML = `&gt;`;
             nextCell.addEventListener('click', goToNextWeek);
             headerRow.appendChild(nextCell);
@@ -540,9 +540,23 @@
             addActivityModal.classList.add('hidden');
         });
 
+        // Adiciona funcionalidade de fechar o modal clicando fora
+        addActivityModal.addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) {
+                addActivityModal.classList.add('hidden');
+            }
+        });
+
         saveEditedActivityBtn.addEventListener('click', saveEditedActivity);
         closeEditModalBtn.addEventListener('click', () => {
             editActivityModal.classList.add('hidden');
+        });
+
+        // Adiciona funcionalidade de fechar o modal clicando fora
+        editActivityModal.addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) {
+                editActivityModal.classList.add('hidden');
+            }
         });
 
         exportBtn.addEventListener('click', () => {
@@ -551,19 +565,30 @@
         closeExportModalBtn.addEventListener('click', () => {
             exportModal.classList.add('hidden');
         });
+        
+        // Adiciona funcionalidade de fechar o modal clicando fora
+        exportModal.addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) {
+                exportModal.classList.add('hidden');
+            }
+        });
+        
         exportSubmitBtn.addEventListener('click', exportToCsv);
+
+        // Adiciona funcionalidade de fechar o modal clicando fora
+        confirmModal.addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) {
+                confirmModal.classList.add('hidden');
+            }
+        });
 
         window.onload = setupApp;
     </script>
 
-    <div class="w-full mt-8 p-4">
-        <div class="bg-white rounded-2xl shadow-xl p-8 max-w-lg w-full mx-auto text-center">
-            <h1 class="text-3xl font-bold text-gray-800">Meu Diário de Atividades</h1>
-            <p class="text-sm text-gray-500 mt-2">Clique em (+) para adicionar uma atividade.</p>
-        </div>
-    </div>
-    
-    <div class="w-full mt-8 p-4">
+    <h1 class="text-3xl font-bold text-gray-800 text-center mt-8">Meu Diário de Atividades</h1>
+    <p class="text-sm text-gray-500 mt-2 text-center">Clique em (+) para adicionar uma atividade.</p>
+
+    <div class="w-full mt-4 p-4">
         <div class="flex justify-end mb-4">
             <button id="exportBtn" class="bg-gray-400 text-white font-semibold py-2 px-4 rounded-lg hover:bg-gray-500 transition-colors duration-200">
                 Exportar para CSV
